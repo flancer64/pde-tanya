@@ -11,9 +11,9 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  APP_DIR: ${{ vars.APP_DIR }}
   PRJ: pde-tanya
-  SERVICE: pde-tanya.service
+  HOME_DIR: ${{ vars.HOME_DIR }}
+  SERVICE: ${{ vars.SERVICE }}
 
 jobs:
   build:
@@ -53,7 +53,11 @@ jobs:
           set -euo pipefail
 
           zip -qq -r "$RUNNER_TEMP/${PRJ}.zip" . \
-            -x '.git/*' '.github/*' '.env' 'var/*'
+            -x \
+              '.git/*' \
+              '.github/*' \
+              '.env' \
+              'var/*'
 
       - name: Upload deployment archive
         uses: actions/upload-artifact@v7
@@ -81,65 +85,146 @@ jobs:
           username: ${{ vars.USER }}
           key: ${{ secrets.SSH_KEY }}
           source: ${{ env.PRJ }}.zip
-          target: ${{ env.APP_DIR }}
+          target: ${{ env.HOME_DIR }}/tmp/deploy
 
-      - name: Switch application release
+      - name: Activate release
         uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ vars.HOST }}
           username: ${{ vars.USER }}
           key: ${{ secrets.SSH_KEY }}
-          script: |
-            set -e
 
-            APP_DIR="${{ env.APP_DIR }}"
+          script: |
+            set -eu
+
             PRJ="${{ env.PRJ }}"
+            HOME_DIR="${{ env.HOME_DIR }}"
             SERVICE="${{ env.SERVICE }}"
 
-            cd "$APP_DIR"
+            if [ -z "$HOME_DIR" ]; then
+              echo "HOME_DIR is not configured."
+              exit 1
+            fi
 
-            rm -rf prod.new
-            mkdir prod.new
-            unzip -qq "${PRJ}.zip" -d prod.new
+            if [ -z "$SERVICE" ]; then
+              echo "SERVICE is not configured."
+              exit 1
+            fi
+
+            APP_ROOT="$HOME_DIR/app/pde"
+            RELEASES="$APP_ROOT/releases"
+            CURRENT="$APP_ROOT/current"
+            DEPLOY_TMP="$HOME_DIR/tmp/deploy"
+
+            RELEASE_ID="${{ github.run_id }}-${{ github.run_attempt }}"
+            RELEASE="$RELEASES/$RELEASE_ID"
+            ARCHIVE="$DEPLOY_TMP/${PRJ}.zip"
+
+            mkdir -p "$RELEASES" "$DEPLOY_TMP"
+
+            #
+            # Validate incoming deployment
+            #
+
+            if [ ! -f "$ARCHIVE" ]; then
+              echo "Deployment archive not found: $ARCHIVE"
+              exit 1
+            fi
+
+            if [ -e "$RELEASE" ]; then
+              echo "Release already exists: $RELEASE"
+              exit 1
+            fi
+
+            #
+            # Prepare release before touching the running application
+            #
+
+            mkdir "$RELEASE"
+            unzip -qq "$ARCHIVE" -d "$RELEASE"
+            rm -f "$ARCHIVE"
+
+            if [ ! -f "$RELEASE/package.json" ]; then
+              echo "Invalid release: package.json not found."
+              rm -rf "$RELEASE"
+              exit 1
+            fi
+
+            #
+            # Resolve current release
+            #
+
+            PREVIOUS=""
+
+            if [ -L "$CURRENT" ]; then
+              PREVIOUS="$(readlink -f "$CURRENT")"
+
+            elif [ -d "$CURRENT" ]; then
+              if [ -n "$(find "$CURRENT" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+                echo "$CURRENT is a real non-empty directory."
+                echo "Refusing automatic migration to release symlink."
+                rm -rf "$RELEASE"
+                exit 1
+              fi
+
+              rmdir "$CURRENT"
+
+            elif [ -e "$CURRENT" ]; then
+              echo "$CURRENT exists but is neither a directory nor symlink."
+              rm -rf "$RELEASE"
+              exit 1
+            fi
+
+            #
+            # Switch application release
+            #
 
             sudo /bin/systemctl stop "$SERVICE" || true
 
-            if [ -f prod/.env ]; then
-              cp -p prod/.env prod.new/.env
-            fi
+            rm -f "$APP_ROOT/current.next"
+            ln -s "$RELEASE" "$APP_ROOT/current.next"
+            mv -Tf "$APP_ROOT/current.next" "$CURRENT"
 
-            if [ -d prod/var ]; then
-              mkdir -p prod.new/var
-              cp -a prod/var/. prod.new/var/
-            fi
-
-            rm -rf prod.old
-
-            if [ -d prod ]; then
-              mv prod prod.old
-            fi
-
-            mv prod.new prod
+            #
+            # Start and validate
+            #
 
             if sudo /bin/systemctl start "$SERVICE" \
-              && systemctl is-active --quiet "$SERVICE"; then
+              && /bin/systemctl is-active --quiet "$SERVICE"; then
 
-              TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
-              mv "${PRJ}.zip" "${PRJ}-${TIMESTAMP}.zip"
+              echo "Release activated: $RELEASE_ID"
+
+              #
+              # Keep five newest releases
+              #
+
+              ls -1dt "$RELEASES"/* 2>/dev/null \
+                | tail -n +6 \
+                | xargs -r rm -rf
+
               exit 0
             fi
 
-            echo "New release failed. Rolling back."
+            #
+            # Rollback
+            #
+
+            echo "New release failed."
 
             sudo /bin/systemctl stop "$SERVICE" || true
 
-            rm -rf prod.failed
-            mv prod prod.failed
+            if [ -n "$PREVIOUS" ] && [ -d "$PREVIOUS" ]; then
+              echo "Rolling back to: $PREVIOUS"
 
-            if [ -d prod.old ]; then
-              mv prod.old prod
+              rm -f "$CURRENT"
+              ln -s "$PREVIOUS" "$CURRENT"
+
               sudo /bin/systemctl start "$SERVICE"
-              systemctl is-active --quiet "$SERVICE"
+              /bin/systemctl is-active --quiet "$SERVICE"
+
+              echo "Rollback completed."
+            else
+              echo "No previous release available for rollback."
             fi
 
             exit 1
