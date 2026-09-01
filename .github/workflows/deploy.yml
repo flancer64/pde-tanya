@@ -1,0 +1,145 @@
+name: LIVE - Build & Deploy PDE Tanya
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-pde-tanya
+  cancel-in-progress: false
+
+env:
+  APP_DIR: ${{ vars.APP_DIR }}
+  PRJ: pde-tanya
+  SERVICE: pde-tanya.service
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install production dependencies
+        env:
+          GH_PAT: ${{ secrets.PDE_PACKAGES_READ_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          AUTH="$(printf 'x-access-token:%s' "$GH_PAT" | base64 -w0)"
+          echo "::add-mask::$AUTH"
+
+          GIT_CONFIG_COUNT=1 \
+          GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $AUTH" \
+          npm install \
+            --install-links \
+            --omit=dev \
+            --no-audit \
+            --no-fund
+
+      - name: Build deployment archive
+        run: |
+          set -euo pipefail
+
+          zip -qq -r "$RUNNER_TEMP/${PRJ}.zip" . \
+            -x '.git/*' '.github/*' '.env' 'var/*'
+
+      - name: Upload deployment archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-archive
+          path: ${{ runner.temp }}/${{ env.PRJ }}.zip
+          retention-days: 1
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download deployment archive
+        uses: actions/download-artifact@v8
+        with:
+          name: app-archive
+          path: .
+
+      - name: Copy deployment archive
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ vars.HOST }}
+          username: ${{ vars.USER }}
+          key: ${{ secrets.SSH_KEY }}
+          source: ${{ env.PRJ }}.zip
+          target: ${{ env.APP_DIR }}
+
+      - name: Switch application release
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ vars.HOST }}
+          username: ${{ vars.USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            set -e
+
+            APP_DIR="${{ env.APP_DIR }}"
+            PRJ="${{ env.PRJ }}"
+            SERVICE="${{ env.SERVICE }}"
+
+            cd "$APP_DIR"
+
+            rm -rf prod.new
+            mkdir prod.new
+            unzip -qq "${PRJ}.zip" -d prod.new
+
+            sudo /bin/systemctl stop "$SERVICE" || true
+
+            if [ -f prod/.env ]; then
+              cp -p prod/.env prod.new/.env
+            fi
+
+            if [ -d prod/var ]; then
+              mkdir -p prod.new/var
+              cp -a prod/var/. prod.new/var/
+            fi
+
+            rm -rf prod.old
+
+            if [ -d prod ]; then
+              mv prod prod.old
+            fi
+
+            mv prod.new prod
+
+            if sudo /bin/systemctl start "$SERVICE" \
+              && systemctl is-active --quiet "$SERVICE"; then
+
+              TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
+              mv "${PRJ}.zip" "${PRJ}-${TIMESTAMP}.zip"
+              exit 0
+            fi
+
+            echo "New release failed. Rolling back."
+
+            sudo /bin/systemctl stop "$SERVICE" || true
+
+            rm -rf prod.failed
+            mv prod prod.failed
+
+            if [ -d prod.old ]; then
+              mv prod.old prod
+              sudo /bin/systemctl start "$SERVICE"
+              systemctl is-active --quiet "$SERVICE"
+            fi
+
+            exit 1

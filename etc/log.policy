@@ -1,0 +1,7 @@
+# Supported thresholds: none, trace, debug, info, warn, error, fatal.
+# none disables a matching source.
+# Example namespace rule: Pde_Runtime_*=debug
+# The longest matching source pattern wins.
+# Enable every TeqFW logging level for every source.
+*=info
+TeqFw_Db_Back_*=trace
