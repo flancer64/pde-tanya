@@ -207,11 +207,11 @@ jobs:
               echo "Release activated: $RELEASE_ID"
 
               #
-              # Keep five newest releases
+                # Keep ten newest releases
               #
 
               ls -1dt "$RELEASES"/* 2>/dev/null \
-                | tail -n +6 \
+                  | tail -n +11 \
                 | xargs -r rm -rf
 
               exit 0
