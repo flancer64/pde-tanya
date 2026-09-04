@@ -13,6 +13,37 @@ const env = {...process.env, PGPASSWORD: process.env.TEQFW_DB__PASSWORD};
 await run('psql', [
     '-h', process.env.TEQFW_DB__HOST, '-p', process.env.TEQFW_DB__PORT,
     '-U', process.env.TEQFW_DB__USER, '-d', process.env.TEQFW_DB__DATABASE,
+    '-v', 'ON_ERROR_STOP=1', '-c', `DO $recovery$
+DECLARE item record;
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_class WHERE relname = 'pde_runtime_access_client__backup_dem_v3')
+     AND (SELECT count(*) FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relname IN ('pde_runtime_person_session','pde_runtime_client','pde_runtime_oauth_token_access','pde_runtime_oauth_token_refresh','pde_runtime_oauth_client','pde_runtime_oauth_policy','pde_runtime_delegation','pde_runtime_audit_event')) < 8 THEN
+    DROP TABLE IF EXISTS public.pde_runtime_person_session, public.pde_runtime_client, public.pde_runtime_oauth_token_access, public.pde_runtime_oauth_token_refresh, public.pde_runtime_oauth_client, public.pde_runtime_oauth_policy, public.pde_runtime_delegation, public.pde_runtime_audit_event CASCADE;
+    FOR item IN SELECT * FROM (VALUES
+      ('pde_runtime_owner_session__backup_dem_v3','pde_runtime_owner_session'),
+      ('pde_runtime_access_client__backup_dem_v3','pde_runtime_access_client'),
+      ('pde_runtime_access_token__backup_dem_v3','pde_runtime_access_token'),
+      ('pde_runtime_oauth_client__backup_dem_v3','pde_runtime_oauth_client'),
+      ('pde_runtime_delegation__backup_dem_v3','pde_runtime_delegation'),
+      ('pde_runtime_delegation_revision__backup_dem_v3','pde_runtime_delegation_revision'),
+      ('pde_runtime_audit_event__backup_dem_v3','pde_runtime_audit_event')
+    ) AS names(source_name, target_name) LOOP
+      IF to_regclass('public.' || item.source_name) IS NOT NULL THEN
+        EXECUTE format('ALTER TABLE public.%I RENAME TO %I', item.source_name, item.target_name);
+      END IF;
+    END LOOP;
+    FOR item IN SELECT conrelid::regclass AS table_name, conname FROM pg_constraint WHERE connamespace = 'public'::regnamespace AND conname LIKE '%__source' LOOP
+      EXECUTE format('ALTER TABLE %s RENAME CONSTRAINT %I TO %I', item.table_name, item.conname, regexp_replace(item.conname, '__source$', ''));
+    END LOOP;
+    FOR item IN SELECT indexrelid::regclass AS index_name, indexrelid::regclass::text AS index_text FROM pg_index WHERE indexrelid::regclass::text LIKE 'public.%__source' LOOP
+      EXECUTE format('ALTER INDEX %s RENAME TO %I', item.index_name, regexp_replace(split_part(item.index_text, '.', 2), '__source$', ''));
+    END LOOP;
+  END IF;
+END $recovery$;`,
+], {cwd: root, env});
+await run('psql', [
+    '-h', process.env.TEQFW_DB__HOST, '-p', process.env.TEQFW_DB__PORT,
+    '-U', process.env.TEQFW_DB__USER, '-d', process.env.TEQFW_DB__DATABASE,
     '-v', 'ON_ERROR_STOP=1', '-c', `DO $migration$
 DECLARE item record;
 BEGIN
