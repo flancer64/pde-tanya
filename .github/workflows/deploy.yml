@@ -189,7 +189,8 @@ jobs:
             # Start and validate
             #
 
-            if sudo /bin/systemctl start "$SERVICE" \
+            if (cd "$CURRENT" && node --env-file=.env scripts/db-migrate.mjs) \
+              && sudo /bin/systemctl start "$SERVICE" \
               && /bin/systemctl is-active --quiet "$SERVICE"; then
 
               echo "Release activated: $RELEASE_ID"
