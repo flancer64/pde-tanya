@@ -6,9 +6,6 @@ Production migration only:
 node --env-file=.env scripts/db-migrate.mjs
 ```
 
-Production must provide `TEQFW_DB__MIGRATION_USER` and
-`TEQFW_DB__MIGRATION_PASSWORD` for a role that owns the legacy tables. The
-application DB credentials are used only as a local fallback.
 
 Local preparation and migration test:
 

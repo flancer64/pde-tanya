@@ -9,18 +9,13 @@ import {promisify} from 'node:util';
 
 const run = promisify(execFile);
 const root = path.resolve(import.meta.dirname, '..');
-const migrationUser = process.env.TEQFW_DB__MIGRATION_USER || process.env.TEQFW_DB__USER;
-const migrationPassword = process.env.TEQFW_DB__MIGRATION_PASSWORD || process.env.TEQFW_DB__PASSWORD;
-if (!migrationUser || !migrationPassword) throw new Error('Configure TEQFW_DB__MIGRATION_USER and TEQFW_DB__MIGRATION_PASSWORD for production migration.');
 const env = {
     ...process.env,
-    TEQFW_DB__USER: migrationUser,
-    TEQFW_DB__PASSWORD: migrationPassword,
-    PGPASSWORD: migrationPassword,
+    PGPASSWORD: process.env.TEQFW_DB__PASSWORD,
 };
 await run('psql', [
     '-h', process.env.TEQFW_DB__HOST, '-p', process.env.TEQFW_DB__PORT,
-    '-U', migrationUser, '-d', process.env.TEQFW_DB__DATABASE,
+    '-U', process.env.TEQFW_DB__USER, '-d', process.env.TEQFW_DB__DATABASE,
     '-v', 'ON_ERROR_STOP=1', '-c', `DO $recovery$
 DECLARE item record;
 BEGIN
@@ -58,7 +53,7 @@ BEGIN
   FOR item IN SELECT c.conrelid::regclass AS table_name, c.conname FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid WHERE c.connamespace = 'public'::regnamespace AND t.relname LIKE 'pde_runtime_%' AND c.contype = 'p' AND NOT EXISTS (SELECT 1 FROM pg_class x WHERE x.relname = t.relname || '__backup_dem_v3') LOOP
     EXECUTE format('ALTER TABLE %s RENAME CONSTRAINT %I TO %I', item.table_name, item.conname, item.conname || '__source');
   END LOOP;
-  FOR item IN SELECT i.indexrelid::regclass AS index_name, ic.relname AS index_text FROM pg_index i JOIN pg_class t ON t.oid = i.indrelid JOIN pg_class ic ON ic.oid = i.indexrelid WHERE t.relname LIKE 'pde_runtime_%' AND ic.relname LIKE 'pde_runtime_%' AND NOT EXISTS (SELECT 1 FROM pg_class x WHERE x.relname = t.relname || '__backup_dem_v3') LOOP
+  FOR item IN SELECT i.indexrelid::regclass AS index_name, ic.relname AS index_text FROM pg_index i JOIN pg_class t ON t.oid = i.indrelid JOIN pg_class ic ON ic.oid = i.indexrelid WHERE t.relname LIKE 'pde_runtime_%' AND ic.relname LIKE 'pde_runtime_%' AND ic.relname NOT LIKE '%__source' AND NOT EXISTS (SELECT 1 FROM pg_class x WHERE x.relname = t.relname || '__backup_dem_v3') LOOP
     EXECUTE format('ALTER INDEX %s RENAME TO %I', item.index_name, item.index_text || '__source');
   END LOOP;
 END $migration$;`,
@@ -79,7 +74,7 @@ const backups = [
 await run('psql', [
     '-h', process.env.TEQFW_DB__HOST,
     '-p', process.env.TEQFW_DB__PORT,
-    '-U', migrationUser,
+    '-U', process.env.TEQFW_DB__USER,
     '-d', process.env.TEQFW_DB__DATABASE,
     '-v', 'ON_ERROR_STOP=1',
     '-c', backups.map((name) => `DROP TABLE IF EXISTS public."${name}";`).join(' '),
