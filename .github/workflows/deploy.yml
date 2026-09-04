@@ -189,7 +189,7 @@ jobs:
             # Start and validate
             #
 
-            ENV_FILE="$(sudo /bin/systemctl show "$SERVICE" --property=EnvironmentFiles --value | awk '{print $1}' | sed 's/^-//')"
+            ENV_FILE="$(/bin/systemctl show "$SERVICE" --property=EnvironmentFiles --value | awk '{print $1}' | sed 's/^-//')"
 
             if [ -z "$ENV_FILE" ] || [ ! -f "$ENV_FILE" ]; then
               echo "Service EnvironmentFile not found."
