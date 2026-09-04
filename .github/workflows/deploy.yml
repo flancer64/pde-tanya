@@ -189,7 +189,18 @@ jobs:
             # Start and validate
             #
 
-            if (cd "$CURRENT" && node --env-file="$APP_ROOT/.env" scripts/db-migrate.mjs) \
+            ENV_FILE="$(sudo /bin/systemctl show "$SERVICE" --property=EnvironmentFiles --value | awk '{print $1}' | sed 's/^-//')"
+
+            if [ -z "$ENV_FILE" ] || [ ! -f "$ENV_FILE" ]; then
+              echo "Service EnvironmentFile not found."
+              exit 1
+            fi
+
+            set -a
+            . "$ENV_FILE"
+            set +a
+
+            if (cd "$CURRENT" && node scripts/db-migrate.mjs) \
               && sudo /bin/systemctl start "$SERVICE" \
               && /bin/systemctl is-active --quiet "$SERVICE"; then
 
