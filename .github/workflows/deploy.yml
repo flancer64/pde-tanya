@@ -189,7 +189,7 @@ jobs:
             # Start and validate
             #
 
-            if (cd "$CURRENT" && node --env-file=.env scripts/db-migrate.mjs) \
+            if (cd "$CURRENT" && node --env-file="$APP_ROOT/.env" scripts/db-migrate.mjs) \
               && sudo /bin/systemctl start "$SERVICE" \
               && /bin/systemctl is-active --quiet "$SERVICE"; then
 
