@@ -9,10 +9,18 @@ import {promisify} from 'node:util';
 
 const run = promisify(execFile);
 const root = path.resolve(import.meta.dirname, '..');
-const env = {...process.env, PGPASSWORD: process.env.TEQFW_DB__PASSWORD};
+const migrationUser = process.env.TEQFW_DB__MIGRATION_USER || process.env.TEQFW_DB__USER;
+const migrationPassword = process.env.TEQFW_DB__MIGRATION_PASSWORD || process.env.TEQFW_DB__PASSWORD;
+if (!migrationUser || !migrationPassword) throw new Error('Configure TEQFW_DB__MIGRATION_USER and TEQFW_DB__MIGRATION_PASSWORD for production migration.');
+const env = {
+    ...process.env,
+    TEQFW_DB__USER: migrationUser,
+    TEQFW_DB__PASSWORD: migrationPassword,
+    PGPASSWORD: migrationPassword,
+};
 await run('psql', [
     '-h', process.env.TEQFW_DB__HOST, '-p', process.env.TEQFW_DB__PORT,
-    '-U', process.env.TEQFW_DB__USER, '-d', process.env.TEQFW_DB__DATABASE,
+    '-U', migrationUser, '-d', process.env.TEQFW_DB__DATABASE,
     '-v', 'ON_ERROR_STOP=1', '-c', `DO $recovery$
 DECLARE item record;
 BEGIN
@@ -71,7 +79,7 @@ const backups = [
 await run('psql', [
     '-h', process.env.TEQFW_DB__HOST,
     '-p', process.env.TEQFW_DB__PORT,
-    '-U', process.env.TEQFW_DB__USER,
+    '-U', migrationUser,
     '-d', process.env.TEQFW_DB__DATABASE,
     '-v', 'ON_ERROR_STOP=1',
     '-c', backups.map((name) => `DROP TABLE IF EXISTS public."${name}";`).join(' '),
