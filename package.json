@@ -4,6 +4,13 @@
   "private": true,
   "description": "Personal Digital Embassy for Tanya.",
   "type": "module",
+  "files": [
+    "bootstrap",
+    "etc",
+    "LICENSE",
+    "README.md",
+    "src"
+  ],
   "engines": {
     "node": ">=20"
   },
