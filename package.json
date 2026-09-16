@@ -33,15 +33,18 @@
     "start": "teq web:start"
   },
   "dependencies": {
-    "@flancer32/pde-desk-echo": "github:flancer32/pde-desk-echo#main",
-    "@flancer32/pde-desk-telegram": "github:flancer32/pde-desk-telegram#main",
-    "@flancer32/pde-runtime": "github:flancer32/pde-runtime#main",
-    "@flancer32/pde-sdk": "github:flancer32/pde-sdk#main",
+    "@flancer32/pde-desk-echo": "git+https://github.com/flancer32/pde-desk-echo.git#446d9e4b9e9b0f4ca0da2ff60013d97c296d9bdb",
+    "@flancer32/pde-desk-telegram": "git+https://github.com/flancer32/pde-desk-telegram.git#cb6b5e9bdc1f3253d60c2fd7b86a1eed79a7fc81",
+    "@flancer32/pde-runtime": "git+https://github.com/flancer32/pde-runtime.git#63f9762b50bb7e936d9aad4d0c4acd3d0164c5b1",
+    "@flancer32/pde-sdk": "git+https://github.com/flancer32/pde-sdk.git#9bf4940a8b507c3d3149d7966dae13d3aea27735",
     "@teqfw/cli": "^2.2.0",
     "pg": "^8.23.0"
   },
   "devDependencies": {
     "@types/node": "^26.4.0",
     "typescript": "^5.9.0"
+  },
+  "allowScripts": {
+    "tdl@8.1.0": true
   }
 }

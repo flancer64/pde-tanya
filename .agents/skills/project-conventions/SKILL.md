@@ -17,6 +17,8 @@ description: Project-specific conventions. Use for every task in this repository
 - At the start of work, check upstream state and safely fast-forward local `main` when possible.
 - Before changes, inspect the affected working tree.
 - Do not commit or push unless the user requests it.
+- When an `npm` or `git` operation is known in advance to require network access (for example, installing or updating dependencies, resolving git dependencies, fetching from a remote, or publishing), request `sandbox_permissions: "require_escalated"` for the initial command instead of retrying the same operation in the restricted sandbox first.
+- Keep local read-only Git inspection and local npm checks in the sandbox when they do not need network or external system access.
 
 ## Project-local skills
 
@@ -41,6 +43,7 @@ description: Project-specific conventions. Use for every task in this repository
 
 ## GitHub
 
+- Run every `gh` command with `sandbox_permissions: "require_escalated"`, because GitHub CLI credentials are stored in the OS keyring and are unavailable inside the sandbox.
 - In all multiline text sent to GitHub, including issues and comments, use actual line breaks; never send literal `\n`, which GitHub displays as text.
 
 ## Shared memory

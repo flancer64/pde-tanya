@@ -39,10 +39,13 @@ jobs:
           AUTH="$(printf 'x-access-token:%s' "$GH_PAT" | base64 -w0)"
           echo "::add-mask::$AUTH"
 
+          git config --global --add url."https://github.com/".insteadOf ssh://git@github.com/
+          git config --global --add url."https://github.com/".insteadOf git@github.com:
+
           GIT_CONFIG_COUNT=1 \
           GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
           GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $AUTH" \
-          npm install \
+          npm ci \
             --install-links \
             --omit=dev \
             --no-audit \
@@ -57,6 +60,7 @@ jobs:
               '.git/*' \
               '.github/*' \
               '.env' \
+              'tmp/*' \
               'var/*'
 
       - name: Upload deployment archive
@@ -200,7 +204,7 @@ jobs:
             . "$ENV_FILE"
             set +a
 
-            if (cd "$CURRENT" && node scripts/db-migrate.mjs) \
+            if (cd "$CURRENT" && npm exec -- teq db:migrate) \
               && sudo /bin/systemctl start "$SERVICE" \
               && /bin/systemctl is-active --quiet "$SERVICE"; then
 
